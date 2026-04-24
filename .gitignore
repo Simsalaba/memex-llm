@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Environment variables
+.env
+.env.local
+
+# User config (copy config.example.yaml → config.yaml and fill in your paths)
+config.yaml
+
+# Personal data — never commit checkpoint or vault contents
+data/checkpoint.json
+data/*.json
+vault/
+
+# Personal docs with real paths / usernames
+HANDOFF.md
+Screenshot*.png
+*.png
+*.jpg
+
+# Claude Code session data
+.claude/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo

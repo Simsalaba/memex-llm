@@ -1,0 +1,73 @@
+ollama:
+  base_url: "http://localhost:11434"
+
+  # Optional: extra Ollama endpoints for parallel summarization.
+  # Each entry gets one worker thread. Probe timeout is 5s — unreachable hosts are skipped.
+  # Override at runtime with: wiki ingest chatgpt --extra-url http://192.168.1.x:11434
+  extra_ollama_urls: []
+
+  # Triage model: fast, small — classifies each conversation in seconds.
+  # Good options: qwen2.5:3b, llama3.2:3b, phi3.5:3.8b
+  triage_model: "qwen2.5:3b"
+
+  # Summary model: deep — extracts key points, entities, tags.
+  # Good options: qwen3:14b, qwen2.5:14b, mistral-small3.1:24b (needs ~14GB VRAM)
+  summary_model: "qwen3:14b"
+
+  # Request timeout in seconds. 300s is safe for large conversations on slower hardware.
+  timeout: 300
+
+  # --- Context window (num_ctx) ---
+  # This is the key VRAM setting. Ollama's built-in default is only 2048 — always set explicitly.
+  #
+  # Rough VRAM cost for a 14B Q4_K_M model (~9GB weights):
+  #   num_ctx:  8192 → KV cache ~1.5GB → total ~10.5GB  ← safe for 12GB VRAM
+  #   num_ctx: 16384 → KV cache ~3.0GB → total ~12.0GB  ← safe for 16GB VRAM (recommended)
+  #   num_ctx: 32768 → KV cache ~6.0GB → total ~15.0GB  ← tight, may offload to CPU
+  #
+  # Change only num_ctx — summary_context_chars and mapreduce_threshold auto-derive from it.
+  num_ctx: 16384
+
+  # --- Auto-derived from num_ctx (do not edit manually) ---
+  # summary_context_chars = num_ctx * 3.5 chars/token * 0.85 (reserve for prompt + output)
+  # mapreduce_threshold   = same value — conversations above this use map-reduce
+  triage_context_chars: 1500    # first N chars fed to triage model
+  mapreduce_chunk_size: 20000   # chars per map-reduce chunk
+  mapreduce_chunk_overlap: 500  # overlap between chunks to preserve context
+
+paths:
+  # Directory containing your ChatGPT export (the folder with conversations-*.json files).
+  # Download from: chatgpt.com → Settings → Data controls → Export data
+  chatgpt_export: "~/chatgpt-export"
+
+  # Optional: path to a graphify graph.json for entity normalization and wikilink enrichment.
+  # Leave empty to skip graph enrichment.
+  graphify_graph: ""
+
+  # Where to write the Obsidian vault. Point Obsidian at this directory.
+  # On WSL/Windows, use the Windows path in Obsidian: C:\Users\you\llm-wiki-vault
+  vault: "~/llm-wiki-vault"
+
+  # Checkpoint file — tracks which conversations are done so runs are resumable.
+  checkpoint: "./data/checkpoint.json"
+
+  # Jinja2 templates directory (reserved for future use).
+  templates: "./templates"
+
+triage:
+  # Programmatic pre-filter (no LLM cost). Conversations below these thresholds are flagged.
+  # Flagged conversations are recoverable: wiki reset-flagged
+  min_messages: 2       # flag if fewer messages than this
+  min_chars: 100        # flag if fewer total characters than this
+
+  # If true, conversations the LLM classifies as "trivial" are skipped.
+  # Set false to summarize everything.
+  skip_trivial: true
+
+pipeline:
+  # Concurrency for summarization pass. Increase if you have multiple Ollama endpoints.
+  # This is overridden automatically when --extra-url is provided.
+  concurrency: 1
+
+  # Regenerate index.md every N summarized conversations (0 = only at end).
+  reindex_interval: 100
