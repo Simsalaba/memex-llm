@@ -3,20 +3,21 @@
 Karpathy-style personal knowledge wiki. Distills your conversations into a persistent, cross-linked [Obsidian](https://obsidian.md/) vault — using local Ollama models, zero API cost.
 
 ```
-ChatGPT export → triage (3B) → summarize (14B) → Obsidian vault
-                                    ↑
-                           resumable, parallel,
+ChatGPT export → triage (3B) → summarize (14B) → synthesize (14B) → Obsidian vault
+                                    ↑                   ↑
+                           resumable, parallel     community topic pages
                            enriched with entity graph
 ```
 
 ## Features
 
 - **Fully local** — runs on Ollama, no cloud APIs, no data leaves your machine
-- **Resumable** — checkpoint every conversation, kill and restart anytime
-- **Two-pass architecture** — triage pass keeps the small model hot, summarize pass keeps the large model hot — no repeated load/unload cycles
+- **Resumable** — checkpoint every conversation (and every community), kill and restart anytime
+- **Three-pass architecture** — triage (3B) → summarize (14B) → synthesize (14B), each model stays hot throughout its pass
+- **Community synthesis** — Graphify clusters conversations into topics; Pass 3 synthesizes one topic page per cluster
 - **Parallel summarization** — distribute work across multiple machines over LAN (`--extra-url`)
 - **Entity enrichment** — optional [Graphify](https://github.com/graphify) integration for wikilinks and cross-references
-- **Map-reduce for large conversations** — auto-detects conversations too long for a single LLM call
+- **Map-reduce for large conversations and communities** — auto-detects content too long for a single LLM call
 
 ## Requirements
 
@@ -95,7 +96,12 @@ wiki ingest chatgpt [DIR]               full pipeline (two-pass, resumable)
   --extra-url URL                       add a remote Ollama endpoint (repeatable)
   --reindex-interval N                  regenerate index.md every N pages (default 100)
 
-wiki reindex                            regenerate index.md from existing vault
+wiki synthesize                         pass 3 — synthesize community topic pages (vault/wiki/)
+  --list                                list communities and their status
+  --community SLUG                      synthesize one community only
+  --reset SLUG|all                      re-queue for re-synthesis
+
+wiki reindex                            regenerate index.md from existing vault (also writes _CLAUDE.md if missing)
 wiki enrich --graph graph.json          re-enrich vault with a new Graphify graph (no LLM)
 wiki reset-flagged                      re-queue too-short/empty conversations
 wiki reset-trivial                      re-queue LLM-classified trivial conversations
@@ -156,6 +162,15 @@ wiki ingest chatgpt --triage-mode none --extra-url http://192.168.1.x:11434
 │  One aggregated page per entity (entities/)             │
 │  Wikilinks enriched via Graphify graph (optional)       │
 │  index.md regenerated every N pages                     │
+└────────────────────┬────────────────────────────────────┘
+                     │ run separately after ingest
+┌────────────────────▼────────────────────────────────────┐
+│  Pass 3 — Synthesize (14B model)           wiki ingest  │
+│  Parses named communities from index.md                 │
+│  Small communities → direct synthesis call              │
+│  Large communities → map-reduce (batch → merge)         │
+│  One evolving topic page per community (wiki/)          │
+│  Separate checkpoint: data/synthesis_checkpoint.json    │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -171,13 +186,18 @@ wiki ingest chatgpt --triage-mode none --extra-url http://192.168.1.x:11434
 
 ```
 vault/
-├── index.md                    auto-generated catalog
+├── _CLAUDE.md                  LLM navigation guide (auto-generated on first reindex)
+├── index.md                    full catalog: conversations, wiki, notes
 ├── log.md                      append-only ingest log
 ├── conversations/
 │   └── YYYY-MM/
 │       └── conversation-title.md
-└── entities/
-    └── entity-name.md
+├── entities/
+│   └── entity-name.md
+├── wiki/                       Pass 3 output — one synthesized topic page per community
+│   └── community-slug.md
+└── notes/                      manual session artifacts (decisions, discoveries, handoffs)
+    └── YYYY-MM-DD-topic.md
 ```
 
 ## VRAM guide

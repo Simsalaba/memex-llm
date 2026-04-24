@@ -127,5 +127,89 @@ def regenerate_index(vault_path: Path) -> None:
             lines.append(f"- {link} ({e['mentions']} mentions)")
         lines.append("")
 
+    # Wiki (synthesis) pages
+    wiki_dir = vault_path / "wiki"
+    if wiki_dir.exists():
+        wiki_pages = sorted(wiki_dir.glob("*.md"))
+        if wiki_pages:
+            lines.append("## Wiki (Synthesis)")
+            lines.append("")
+            lines.append("*One synthesized topic page per community cluster.*")
+            lines.append("")
+            for md_file in wiki_pages:
+                text = md_file.read_text(encoding="utf-8")
+                fm = _read_frontmatter(text)
+                title = md_file.stem.replace("-", " ").title()
+                for line in text.splitlines():
+                    if line.startswith("# "):
+                        title = line[2:].strip()
+                        break
+                rel = str(md_file.relative_to(vault_path).with_suffix(""))
+                count = fm.get("conversation_count", "?")
+                lines.append(f"- [[{rel}|{title}]] ({count} conversations)")
+            lines.append("")
+
+    # Notes (manual session artifacts)
+    notes_dir = vault_path / "notes"
+    if notes_dir.exists():
+        note_pages = sorted(notes_dir.glob("*.md"), reverse=True)
+        if note_pages:
+            lines.append("## Notes")
+            lines.append("")
+            lines.append("*Manual session artifacts: decisions, discoveries, handoffs.*")
+            lines.append("")
+            for md_file in note_pages:
+                text = md_file.read_text(encoding="utf-8")
+                fm = _read_frontmatter(text)
+                title = md_file.stem
+                for line in text.splitlines():
+                    if line.startswith("# "):
+                        title = line[2:].strip()
+                        break
+                rel = str(md_file.relative_to(vault_path).with_suffix(""))
+                note_type = fm.get("type", "note")
+                date = fm.get("date", "")
+                lines.append(f"- [[{rel}|{title}]] ({note_type}{', ' + date if date else ''})")
+            lines.append("")
+
     index_path = vault_path / "index.md"
     index_path.write_text("\n".join(lines), encoding="utf-8")
+
+    # Keep _CLAUDE.md in sync (only write if missing — user may customize it)
+    claude_md = vault_path / "_CLAUDE.md"
+    if not claude_md.exists():
+        _write_vault_claude_md(vault_path, len(conversations), len(entities))
+
+
+def _write_vault_claude_md(vault_path: Path, conv_count: int, entity_count: int) -> None:
+    """Write _CLAUDE.md at vault root — entry point for LLM navigation."""
+    content = f"""\
+# Vault Navigation
+
+This is a personal knowledge vault built from AI conversation history.
+Start here when searching for information or answering questions.
+
+## Structure
+
+| Folder | Contents | How to use |
+|--------|----------|------------|
+| `conversations/` | {conv_count} archived conversation summaries, organized by YYYY-MM | Search for specific past interactions |
+| `entities/` | {entity_count} named entity pages (tools, people, projects, concepts) | Look up anything named |
+| `wiki/` | Synthesized topic pages — one per community cluster | Best starting point for broad topics |
+| `notes/` | Manual session artifacts: decisions, discoveries, handoffs | Recent context and architectural decisions |
+
+## Navigation
+
+1. **For a broad topic** (e.g. "what do I know about Kubernetes") → check `wiki/` first
+2. **For a specific tool or project** → check `entities/`
+3. **For recent decisions or session context** → check `notes/`
+4. **For a specific past conversation** → search `conversations/` or use `index.md`
+5. **Full catalog** → `index.md` lists everything grouped by community
+
+## Query approach
+
+Read `index.md` to get an overview of communities and recent notes.
+Drill into relevant pages. Synthesize across sources to answer the question.
+Do not re-summarize what pages already say — extend and connect.
+"""
+    claude_md.write_text(content, encoding="utf-8")
