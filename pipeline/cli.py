@@ -38,6 +38,7 @@ from pipeline import config as cfg
 from pipeline.checkpoint import Checkpoint
 from pipeline.graphify_bridge import load_graph
 from pipeline.ollama_client import OllamaClient
+from pipeline.openai_client import OpenAICompatibleClient
 from pipeline.parsers.chatgpt import parse_export
 from pipeline.processors.summarizer import summarize_conversation
 from pipeline.processors.triage import (
@@ -51,6 +52,25 @@ from pipeline.wiki.log import append_log
 from pipeline.wiki.writer import update_entity_page, write_conversation_page
 
 console = Console()
+
+
+def _make_client(url: str, timeout: float, api_key: str = "") -> OllamaClient | OpenAICompatibleClient:
+    """
+    Return the right client for a given URL.
+    Ollama: responds to /api/tags — use OllamaClient.
+    Everything else: assume OpenAI-compatible — use OpenAICompatibleClient.
+    """
+    probe = OllamaClient(url, timeout=5.0)
+    try:
+        import httpx
+        with httpx.Client(timeout=5.0) as c:
+            resp = c.get(f"{url.rstrip('/')}/api/tags")
+        if resp.status_code == 200:
+            return OllamaClient(url, timeout=timeout)
+    except Exception:
+        pass
+    key = api_key or __import__("os").getenv("LLM_WIKI_API_KEY") or __import__("os").getenv("OPENAI_API_KEY", "")
+    return OpenAICompatibleClient(url, api_key=key, timeout=timeout)
 
 
 def _make_progress() -> Progress:
@@ -83,7 +103,9 @@ def cli() -> None:
 @cli.command()
 @click.option("--extra-url", "extra_urls_cli", multiple=True,
               help="Extra Ollama endpoint(s) to check. Overrides config extra_ollama_urls.")
-def check(extra_urls_cli: tuple) -> None:
+@click.option("--api-key", "api_key", default="",
+              help="API key for OpenAI-compatible extra endpoints (or set LLM_WIKI_API_KEY env var).")
+def check(extra_urls_cli: tuple, api_key: str) -> None:
     """Verify Ollama is running and required models are available."""
     c = cfg.get()
     triage_model = c["ollama"]["triage_model"]
@@ -99,7 +121,7 @@ def check(extra_urls_cli: tuple) -> None:
 
     any_primary_down = False
     for i, url in enumerate(all_urls):
-        cl = OllamaClient(url, timeout=5.0)
+        cl = _make_client(url, timeout=5.0, api_key=api_key)
         label = "primary" if i == 0 else "extra"
         if cl.is_available():
             try:
@@ -386,7 +408,9 @@ def ingest() -> None:
 @click.option("--limit", default=0, help="Limit number of conversations (0 = all)")
 @click.option("--reindex-interval", default=100, help="Regenerate index every N summarized conversations")
 @click.option("--extra-url", "extra_urls_cli", multiple=True,
-              help="Extra Ollama endpoint(s) for parallel summarization. Overrides config extra_ollama_urls.")
+              help="Extra Ollama or OpenAI-compatible endpoint(s) for parallel summarization.")
+@click.option("--api-key", "api_key", default="",
+              help="API key for OpenAI-compatible extra endpoints (or set LLM_WIKI_API_KEY env var).")
 @click.option("--interleaved", is_flag=True, hidden=True,
               help="Old single-pass mode. Slower — switches model every conversation.")
 def ingest_chatgpt(
@@ -395,6 +419,7 @@ def ingest_chatgpt(
     limit: int,
     reindex_interval: int,
     extra_urls_cli: tuple,
+    api_key: str,
     interleaved: bool,
 ) -> None:
     """
@@ -425,10 +450,11 @@ def ingest_chatgpt(
 
     clients = [primary]
     for url in extra_urls:
-        cl = OllamaClient(url, timeout=5.0)
+        cl = _make_client(url, timeout=5.0, api_key=api_key)
         if cl.is_available():
-            clients.append(OllamaClient(url, timeout=timeout))
-            console.print(f"[green]Extra endpoint online:[/] {url}")
+            clients.append(_make_client(url, timeout=timeout, api_key=api_key))
+            kind = "OpenAI-compatible" if isinstance(cl, OpenAICompatibleClient) else "Ollama"
+            console.print(f"[green]Extra endpoint online[/] ({kind}): {url}")
         else:
             console.print(f"[yellow]Extra endpoint unreachable, skipping:[/] {url}")
 

@@ -41,6 +41,9 @@ Screenshot*.png
 # Claude Code session data
 .claude/
 
+# Personal drafts
+hn-post.md
+
 # Editor
 .vscode/
 .idea/
