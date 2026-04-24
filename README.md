@@ -301,6 +301,10 @@ The two approaches are complementary rather than competing — there is a plan t
 
 **Graphify** — used to generate the entity relationship graph that powers wikilink enrichment and community detection. Run Graphify on your source data first to produce a `graph.json`, then point `paths.graphify_graph` at it. Without Graphify the pipeline still works — entity pages just won't have cross-references or community grouping.
 
+## FAQ
+
+Common questions about pipeline behavior, vault structure, Graphify, models, and design decisions — see [FAQ.md](FAQ.md).
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
