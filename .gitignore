@@ -38,8 +38,11 @@ Screenshot*.png
 *.png
 *.jpg
 
-# Claude Code session data
+# Claude Code session data (exclude session state, but ship project commands)
 .claude/
+!.claude/
+!.claude/commands/
+!.claude/commands/*.md
 
 # Editor
 .vscode/
