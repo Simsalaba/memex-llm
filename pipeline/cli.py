@@ -788,6 +788,34 @@ def _run_interleaved(
 
 
 # ---------------------------------------------------------------------------
+# Synthesis helpers
+# ---------------------------------------------------------------------------
+
+def _related_community_slugs(
+    community: "Community",
+    all_communities: "list[Community]",
+    max_related: int = 5,
+) -> list[str]:
+    """
+    Find other communities whose conversation paths overlap with this one's entities.
+    Uses the conversation path sets as a proxy for topic adjacency — communities
+    that share conversations in their clusters are topically related.
+    Simple overlap count, no graph required.
+    """
+    from pipeline.processors.synthesizer import Community as _Comm
+    own_set = set(community.conv_paths)
+    scores: list[tuple[int, str]] = []
+    for other in all_communities:
+        if other.slug == community.slug:
+            continue
+        overlap = len(own_set & set(other.conv_paths))
+        if overlap:
+            scores.append((overlap, other.slug))
+    scores.sort(reverse=True)
+    return [slug for _, slug in scores[:max_related]]
+
+
+# ---------------------------------------------------------------------------
 # synthesize
 # ---------------------------------------------------------------------------
 
@@ -896,7 +924,8 @@ def synthesize(limit: int, community_slug: str | None, list_only: bool, reset_sl
                     continue
 
                 content = synthesize_community(comm, items, primary, model, num_ctx=num_ctx)
-                write_synthesis_page(comm, content, vault, today)
+                related = _related_community_slugs(comm, communities)
+                write_synthesis_page(comm, content, vault, today, related_slugs=related)
                 cp.mark_done(comm.slug)
                 done += 1
 

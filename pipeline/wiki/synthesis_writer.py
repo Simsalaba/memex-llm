@@ -24,7 +24,7 @@ tags: [synthesis]
 # {community_name}
 
 {content}
-
+{related_section}
 ---
 *Synthesized from {count} conversations · {date}*
 """
@@ -35,10 +35,16 @@ def write_synthesis_page(
     content: str,
     vault_path: Path,
     date: str,
+    related_slugs: list[str] | None = None,
 ) -> Path:
     """Write vault/wiki/<slug>.md. Creates wiki/ dir if needed."""
     wiki_dir = vault_path / "wiki"
     wiki_dir.mkdir(parents=True, exist_ok=True)
+
+    related_section = ""
+    if related_slugs:
+        links = "\n".join(f"- [[wiki/{s}]]" for s in related_slugs)
+        related_section = f"\n## Related Communities\n{links}\n"
 
     page_path = wiki_dir / f"{community.slug}.md"
     page_path.write_text(
@@ -47,6 +53,7 @@ def write_synthesis_page(
             count=community.count,
             date=date,
             content=content.strip(),
+            related_section=related_section,
         ),
         encoding="utf-8",
     )

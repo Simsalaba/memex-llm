@@ -61,6 +61,7 @@ Rules:
 - Each section: 3-8 bullet points (except Overview)
 - Do NOT summarize individual conversations — synthesize patterns across all
 - Do NOT include a title line
+- For any named tool, project, service, or person you mention, wrap it in [[double brackets]]: [[Kubernetes]], [[Jenkins]], [[Grafana]], [[Python]]. This creates Obsidian graph links.
 
 --- Conversations ---
 {summaries}
@@ -74,6 +75,7 @@ Topic: {community_name}
 These are partial synthesis pages for different batches of conversations about this topic.
 Merge into one cohesive page with the same 5-section structure.
 Deduplicate. Keep the most important points. No new sections.
+Preserve all [[wikilinks]] from the partial pages — do not strip the double brackets.
 
 --- Partial syntheses ---
 {partials}
