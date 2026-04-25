@@ -212,4 +212,4 @@ Read `index.md` to get an overview of communities and recent notes.
 Drill into relevant pages. Synthesize across sources to answer the question.
 Do not re-summarize what pages already say — extend and connect.
 """
-    claude_md.write_text(content, encoding="utf-8")
+    (vault_path / "_CLAUDE.md").write_text(content, encoding="utf-8")
