@@ -98,6 +98,26 @@ When the vault grows large enough that `index.md` is too big to read in one LLM 
 
 At current scale (~2100 conversations, 72 wiki pages), `index.md` + direct file reads are sufficient — no embeddings needed. Revisit when wiki/ grows to 200+ pages or index.md exceeds 100k tokens.
 
+**Graphify on wiki pages (Pass 3.5)**
+
+After synthesis, run Graphify on `wiki/` instead of enriching conversation pages for the wiki-level graph. Benefits:
+
+- 72 pages vs 2126 — runs in minutes
+- Clean synthesized prose → better entity extraction than fragmented conversation summaries
+- Produces real graph edges between wiki pages, replacing the hacky conversation-overlap heuristic in `_related_community_slugs`
+- Better community names: Graphify sees the distilled content, not a mix of outlier conversations
+
+This also fixes misnamed communities. Example: "Cross-cultural message refinement and respectful tone" is a Graphify cluster of 3 conversations where one outlier dominated the name — but the synthesized content is clearly about watch modding. Graphify on the wiki page would name it correctly.
+
+Flow:
+```
+wiki synthesize         → vault/wiki/
+graphify on vault/wiki/ → wiki-graph.json
+wiki enrich-wiki --graph wiki-graph.json  → fix wiki/ wikilinks + Related Communities
+```
+
+Needs a new `wiki enrich-wiki` subcommand that only touches `wiki/` pages.
+
 **Re-synthesis on new ingests**
 
 Currently `wiki synthesize` generates topic pages once. When new conversations are ingested, affected community pages go stale. Options:
