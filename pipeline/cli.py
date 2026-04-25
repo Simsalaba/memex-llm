@@ -45,9 +45,11 @@ from pipeline.processors.triage import (
     triage_programmatic,
     triage_programmatic_reason,
 )
+from pipeline.processors.synthesizer import load_community_summaries, parse_communities, synthesize_community
 from pipeline.wiki.enricher import enrich_vault
 from pipeline.wiki.index import regenerate_index
 from pipeline.wiki.log import append_log
+from pipeline.wiki.synthesis_writer import SynthesisCheckpoint, write_synthesis_page
 from pipeline.wiki.writer import update_entity_page, write_conversation_page
 
 console = Console()
@@ -783,6 +785,164 @@ def _run_interleaved(
             progress.advance(task)
             if reindex_interval and processed % reindex_interval == 0:
                 regenerate_index(vault)
+
+
+# ---------------------------------------------------------------------------
+# Synthesis helpers
+# ---------------------------------------------------------------------------
+
+def _related_community_slugs(
+    community: "Community",
+    all_communities: "list[Community]",
+    max_related: int = 5,
+) -> list[str]:
+    """
+    Find other communities whose conversation paths overlap with this one's entities.
+    Uses the conversation path sets as a proxy for topic adjacency — communities
+    that share conversations in their clusters are topically related.
+    Simple overlap count, no graph required.
+    """
+    from pipeline.processors.synthesizer import Community as _Comm
+    own_set = set(community.conv_paths)
+    scores: list[tuple[int, str]] = []
+    for other in all_communities:
+        if other.slug == community.slug:
+            continue
+        overlap = len(own_set & set(other.conv_paths))
+        if overlap:
+            scores.append((overlap, other.slug))
+    scores.sort(reverse=True)
+    return [slug for _, slug in scores[:max_related]]
+
+
+# ---------------------------------------------------------------------------
+# synthesize
+# ---------------------------------------------------------------------------
+
+@cli.command()
+@click.option("--limit", default=0, help="Max communities to synthesize (0 = all)")
+@click.option("--community", "community_slug", default=None,
+              help="Synthesize only this community slug (see --list for slugs)")
+@click.option("--list", "list_only", is_flag=True,
+              help="List communities and exit — no LLM calls")
+@click.option("--reset", "reset_slug", default=None, metavar="SLUG",
+              help="Reset a community for re-synthesis. Pass 'all' to reset everything.")
+def synthesize(limit: int, community_slug: str | None, list_only: bool, reset_slug: str | None) -> None:
+    """
+    Pass 3 — synthesize community knowledge into topic pages.
+
+    Reads named communities from index.md, loads conversation summaries,
+    and writes one synthesized topic page per community to vault/wiki/.
+    Resumable — skips already-done communities.
+    """
+    c = cfg.get()
+    vault = Path(c["paths"]["vault"])
+    index_path = vault / "index.md"
+
+    if not index_path.exists():
+        console.print("[red]index.md not found. Run 'wiki reindex' first.")
+        sys.exit(1)
+
+    checkpoint_path = Path(c["paths"]["checkpoint"]).parent / "synthesis_checkpoint.json"
+    cp = SynthesisCheckpoint(checkpoint_path)
+
+    # ── Reset mode ──────────────────────────────────────────────────────────
+    if reset_slug:
+        target = None if reset_slug == "all" else reset_slug
+        n = cp.reset(target)
+        console.print(f"[green]Reset {n} entr{'y' if n == 1 else 'ies'}.")
+        return
+
+    console.print(f"[dim]Parsing communities from {index_path}...")
+    communities = parse_communities(index_path)
+    console.print(f"[dim]Found {len(communities)} named communities with conversation pages.")
+
+    # ── List mode ───────────────────────────────────────────────────────────
+    if list_only:
+        table = Table(title=f"Communities ({len(communities)})")
+        table.add_column("Slug")
+        table.add_column("Name")
+        table.add_column("Convs")
+        table.add_column("Status")
+        for comm in communities:
+            status = "[green]done" if cp.is_done(comm.slug) else "[dim]pending"
+            table.add_row(comm.slug, comm.name, str(comm.count), status)
+        console.print(table)
+        return
+
+    # ── Filter ──────────────────────────────────────────────────────────────
+    if community_slug:
+        targets = [comm for comm in communities if comm.slug == community_slug]
+        if not targets:
+            console.print(f"[red]Community slug not found: {community_slug}")
+            console.print("[dim]Run 'wiki synthesize --list' to see available slugs.")
+            sys.exit(1)
+    else:
+        targets = [comm for comm in communities if not cp.is_done(comm.slug)]
+        if limit:
+            targets = targets[:limit]
+
+    already_done = len(communities) - len([comm for comm in communities if not cp.is_done(comm.slug)])
+    console.print(f"[dim]Checkpoint: {already_done} done, {len(targets)} remaining")
+
+    if not targets:
+        console.print("[green]All communities already synthesized.")
+        return
+
+    # ── LLM setup ───────────────────────────────────────────────────────────
+    primary = OllamaClient(c["ollama"]["base_url"], timeout=c["ollama"]["timeout"])
+    if not primary.is_available():
+        console.print("[red]Ollama not reachable. Start with: ollama serve")
+        sys.exit(1)
+
+    model = c["ollama"]["summary_model"]
+    num_ctx = c["ollama"]["num_ctx"]
+
+    console.print(f"[dim]Warming up {model} (num_ctx={num_ctx})...")
+    primary.warmup(model, num_ctx=num_ctx)
+
+    from datetime import date as _date
+    today = str(_date.today())
+
+    # ── Synthesis loop ───────────────────────────────────────────────────────
+    done = 0
+    errors = 0
+
+    with _make_progress() as progress:
+        task = progress.add_task("Synthesizing...", total=len(targets))
+
+        for comm in targets:
+            progress.update(task, description=f"[{done+1}/{len(targets)}] {comm.name[:50]}")
+
+            try:
+                items = load_community_summaries(comm, vault)
+                if not items:
+                    console.print(f"\n[yellow]No pages found for: {comm.name} — skipping")
+                    cp.mark_error(comm.slug, "no conversation pages found")
+                    errors += 1
+                    progress.advance(task)
+                    continue
+
+                content = synthesize_community(comm, items, primary, model, num_ctx=num_ctx, vault_path=vault)
+                related = _related_community_slugs(comm, communities)
+                write_synthesis_page(comm, content, vault, today, related_slugs=related)
+                cp.mark_done(comm.slug)
+                done += 1
+
+            except Exception as e:
+                console.print(f"\n[red]Error on '{comm.name}': {e}")
+                cp.mark_error(comm.slug, str(e))
+                errors += 1
+
+            progress.advance(task)
+
+    table = Table(title="Synthesize Complete")
+    table.add_column("Stat")
+    table.add_column("Value")
+    table.add_row("Topic pages written", str(done))
+    table.add_row("Errors", str(errors))
+    table.add_row("Output", str(vault / "wiki"))
+    console.print(table)
 
 
 if __name__ == "__main__":

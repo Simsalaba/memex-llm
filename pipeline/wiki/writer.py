@@ -93,9 +93,11 @@ def write_conversation_page(
             community = c
             break
 
-    # Build entity wikilinks
+    # Build entity wikilinks — use path+alias format so Obsidian resolves
+    # multi-word names correctly (e.g. [[entities/cost-explorer|Cost Explorer]])
     entity_links = "\n".join(
-        f"- {_wikilink(e['name'])} ({e['type']})" for e in normalized_entities
+        f"- [[entities/{_slug(e['name'])}|{e['name']}]] ({e['type']})"
+        for e in normalized_entities
     ) or "- (none extracted)"
 
     # Graphify-enriched related links (neighbors not already in entity list)
@@ -109,7 +111,9 @@ def write_conversation_page(
 
     related_section = ""
     if related:
-        related_links = "\n".join(f"- {_wikilink(r)}" for r in related[:10])
+        related_links = "\n".join(
+            f"- [[entities/{_slug(r)}|{r}]]" for r in related[:10]
+        )
         related_section = f"\n## Related (via graph)\n{related_links}"
 
     # Tags: combine summary tags + community tag
