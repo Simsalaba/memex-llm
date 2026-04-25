@@ -20,6 +20,8 @@ vault/
 
 `_CLAUDE.md` at vault root gives an LLM the navigation map. `index.md` is the full catalog.
 
+**Obsidian graph connectivity** — synthesis pages produce entity wikilinks inline (the LLM wraps named tools/projects/people in `[[brackets]]`) and a `## Related Communities` section linking to adjacent wiki pages. Graph chain: `wiki/topic` → `[[entity]]` → conversations.
+
 ---
 
 ## Insight: why this architecture

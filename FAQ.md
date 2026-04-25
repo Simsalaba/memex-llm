@@ -21,7 +21,7 @@ wiki synthesize --reset <community-slug>   # reset one
 wiki synthesize --reset all                # reset all
 wiki synthesize                            # re-run
 ```
-Automatic delta detection (only re-synthesize communities with new conversations) is planned but not yet implemented.
+Automatic delta detection (only re-synthesize communities with new conversations) is planned but not yet implemented. See ROADMAP.md.
 
 **What is `_CLAUDE.md` and should I edit it?**
 `_CLAUDE.md` at the vault root is an LLM navigation guide — it tells an AI assistant what's in each folder and how to search. It's auto-generated on first `wiki reindex` and never overwritten after that, so you can freely customize it. Delete it and rerun `wiki reindex` to regenerate from scratch.
@@ -44,6 +44,27 @@ Two reasons. First, synthesis is lossy — the LLM distills patterns but drops s
 
 **Should `wiki/` pages be edited manually?**
 You can, but they'll be overwritten if you reset and re-synthesize that community. Treat them as generated artifacts. If you want to add permanent notes about a topic, use `notes/` instead.
+
+**The Obsidian graph looks sparse when I filter to just `wiki/` — why?**
+Wiki pages need wikilinks to become graph nodes with edges. The synthesis prompt instructs the LLM to wrap named entities in `[[double brackets]]` (e.g. `[[Kubernetes]]`, `[[Jenkins]]`), which creates edges to entity pages. Entity pages already link to conversations, so the full chain is: `wiki/devops` → `[[Kubernetes]]` → every conversation mentioning Kubernetes.
+
+Each wiki page also gets a `## Related Communities` section linking to adjacent community wiki pages by topic overlap.
+
+If you synthesized communities before this was added, reset and re-run:
+```bash
+wiki synthesize --reset all
+wiki synthesize
+```
+
+**How do I filter the Obsidian graph to show only wiki and notes pages?**
+Open Graph View (`Ctrl+G`), click the filter/sliders icon, and enter:
+```
+path:wiki OR path:notes
+```
+Or to exclude the large archive folders:
+```
+-path:conversations -path:entities
+```
 
 ---
 
