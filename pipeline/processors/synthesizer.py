@@ -236,25 +236,57 @@ def _merge_syntheses(
     return client.generate(model, prompt, system=SYNTHESIZE_SYSTEM, num_ctx=num_ctx)
 
 
+def _fix_wikilinks(text: str, vault_path: Path) -> str:
+    """
+    Post-process synthesis output: convert bare [[Name]] wikilinks to
+    [[entities/slug|Name]] format so Obsidian resolves multi-word names correctly.
+    Only converts links where a matching entity file exists.
+    """
+    entities_dir = vault_path / "entities"
+    if not entities_dir.exists():
+        return text
+
+    known_slugs = {f.stem for f in entities_dir.glob("*.md")}
+
+    def _replace(m: re.Match) -> str:
+        inner = m.group(1)
+        # Already has path or alias — leave alone
+        if "/" in inner or "|" in inner:
+            return m.group(0)
+        candidate = slugify(inner, max_length=80, separator="-")
+        if candidate in known_slugs:
+            return f"[[entities/{candidate}|{inner}]]"
+        return m.group(0)
+
+    return re.sub(r"\[\[([^\]]+)\]\]", _replace, text)
+
+
 def synthesize_community(
     community: Community,
     items: list[str],
     client: OllamaClient,
     model: str,
     num_ctx: int = 16384,
+    vault_path: Path | None = None,
 ) -> str:
     """
     Synthesize a community into a topic page.
     Uses map-reduce if items exceed MAX_CHARS_PER_CALL.
     Returns raw markdown content (no frontmatter, no title).
+    If vault_path is provided, fixes [[wikilinks]] to use entity path format.
     """
     batches = _batch_items(items, MAX_CHARS_PER_CALL)
 
     if len(batches) == 1:
-        return _synthesize_batch(community.name, len(items), batches[0], client, model, num_ctx)
+        result = _synthesize_batch(community.name, len(items), batches[0], client, model, num_ctx)
+    else:
+        partials = [
+            _synthesize_batch(community.name, len(items), batch, client, model, num_ctx)
+            for batch in batches
+        ]
+        result = _merge_syntheses(community.name, partials, client, model, num_ctx)
 
-    partials = [
-        _synthesize_batch(community.name, len(items), batch, client, model, num_ctx)
-        for batch in batches
-    ]
-    return _merge_syntheses(community.name, partials, client, model, num_ctx)
+    if vault_path:
+        result = _fix_wikilinks(result, vault_path)
+
+    return result

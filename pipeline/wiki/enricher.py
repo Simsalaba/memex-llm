@@ -189,9 +189,9 @@ def enrich_conversation_page(page_path: Path, graph: GraphData) -> bool:
     if not normalized:
         return False
 
-    # Rebuild ## Entities section
+    # Rebuild ## Entities section — use path+alias format for correct Obsidian resolution
     new_entity_links = "\n".join(
-        f"- {_wikilink(name)} ({etype})" for name, etype in normalized
+        f"- [[entities/{_slug(name)}|{name}]] ({etype})" for name, etype in normalized
     )
     content = _ENTITIES_SECTION.sub(
         lambda m: m.group(1) + new_entity_links,
@@ -209,7 +209,9 @@ def enrich_conversation_page(page_path: Path, graph: GraphData) -> bool:
 
     content = _RELATED_SECTION.sub("", content)
     if related:
-        related_links = "\n".join(f"- {_wikilink(r)}" for r in related[:10])
+        related_links = "\n".join(
+            f"- [[entities/{_slug(r)}|{r}]]" for r in related[:10]
+        )
         content = content.rstrip() + f"\n\n## Related (via graph)\n{related_links}"
 
     # Update community in frontmatter

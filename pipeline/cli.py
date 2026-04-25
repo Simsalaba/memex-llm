@@ -923,7 +923,7 @@ def synthesize(limit: int, community_slug: str | None, list_only: bool, reset_sl
                     progress.advance(task)
                     continue
 
-                content = synthesize_community(comm, items, primary, model, num_ctx=num_ctx)
+                content = synthesize_community(comm, items, primary, model, num_ctx=num_ctx, vault_path=vault)
                 related = _related_community_slugs(comm, communities)
                 write_synthesis_page(comm, content, vault, today, related_slugs=related)
                 cp.mark_done(comm.slug)
